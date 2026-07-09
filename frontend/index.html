@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Desmos Bezier Renderer | Interactive</title>
+    <link rel="icon" href="https://www.desmos.com/assets/img/apps/graphing/favicon.ico">
+    <script src="https://www.desmos.com/api/v1.8/calculator.js?apiKey={{ api_key }}"></script>
+    <style>
+        :root {
+            --bg-main: #ffffff;
+            --bg-sidebar: rgba(244, 244, 245, 0.85);
+            --border-sidebar: rgba(0, 0, 0, 0.08);
+            --border-upload: rgba(0, 0, 0, 0.15);
+            --bg-upload: rgba(0, 0, 0, 0.02);
+            --bg-upload-hover: rgba(0, 113, 227, 0.06);
+            --text-main: #18181b;
+            --text-muted: #71717a;
+            --slider-track: rgba(0, 0, 0, 0.08);
+            --btn-disabled-bg: rgba(0, 0, 0, 0.06);
+            --btn-disabled-text: #a1a1aa;
+            --btn-secondary: rgba(0, 0, 0, 0.05);
+            --card-bg: rgba(0, 0, 0, 0.02);
+            
+            /* 悬浮预览与弹窗专有 */
+            --modal-mask: rgba(255, 255, 255, 0.85);
+            --preview-border: rgba(0, 0, 0, 0.15);
+            --preview-bg: #f4f4f5;
+        }
+
+        .dark-theme {
+            --bg-main: #09090b;
+            --bg-sidebar: rgba(20, 20, 22, 0.85);
+            --border-sidebar: rgba(255, 255, 255, 0.08);
+            --border-upload: rgba(255, 255, 255, 0.15);
+            --bg-upload: rgba(255, 255, 255, 0.02);
+            --bg-upload-hover: rgba(0, 113, 227, 0.06);
+            --text-main: #f4f4f5;
+            --text-muted: #a1a1aa;
+            --slider-track: rgba(255, 255, 255, 0.1);
+            --btn-disabled-bg: rgba(255, 255, 255, 0.08);
+            --btn-disabled-text: #71717a;
+            --btn-secondary: rgba(255, 255, 255, 0.06);
+            --card-bg: rgba(255, 255, 255, 0.03);
+            
+            /* 悬浮预览与弹窗专有 */
+            --modal-mask: rgba(0, 0, 0, 0.85);
+            --preview-border: rgba(255, 255, 255, 0.2);
+            --preview-bg: #1c1c1e;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+            background: var(--bg-main);
+            overflow: hidden;
+            display: flex;
+            transition: background 0.3s ease;
+        }
+        .sidebar-container {
+            width: 380px;
+            height: 100%;
+            position: relative;
+            flex-shrink: 0;
+            z-index: 10;
+            transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        body.sidebar-collapsed .sidebar-container {
+            margin-left: -380px;
+        }
+        .sidebar {
+            width: 100%;
+            height: 100%;
+            background: var(--bg-sidebar);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-right: 1px solid var(--border-sidebar);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            color: var(--text-main);
+            box-sizing: border-box;
+            padding: 24px;
+            box-shadow: 4px 0 24px rgba(0, 0, 0, 0.3);
+            transition: background 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+        }
+        .main-content {
+            flex: 1;
+            height: 100%;
+            position: relative;
+            z-index: 1;
+        }
+        .logo-area {
+            margin-bottom: 24px;
+        }
+        .logo-title {
+            font-size: 20px;
+            font-weight: 700;
+            margin: 0 0 6px 0;
+            background: linear-gradient(135deg, #38bdf8, #0071e3);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .logo-subtitle {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin: 0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .upload-area {
+            border: 2px dashed var(--border-upload);
+            border-radius: 12px;
+            padding: 24px 16px;
+            text-align: center;
+            cursor: pointer;
+            background: var(--bg-upload);
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 24px;
+        }
+        .upload-area:hover {
+            border-color: #0071e3;
+            background: var(--bg-upload-hover);
+        }
+        .upload-area svg {
+            width: 32px;
+            height: 32px;
+            fill: var(--text-muted);
+            transition: fill 0.2s ease;
+        }
+        .upload-area:hover svg {
+            fill: #0071e3;
+        }
+        .upload-area span {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+        .upload-area strong {
+            color: var(--text-main);
+        }
+        .section-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin: 0 0 16px 0;
+            border-bottom: 1px solid var(--border-sidebar);
+            padding-bottom: 6px;
+        }
+        .control-group {
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .control-label-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+        }
+        .control-name {
+            color: var(--text-main);
+            font-weight: 500;
+        }
+        .control-value {
+            color: #0071e3;
+            font-weight: 600;
+        }
+        .slider-desc {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: -2px;
+        }
+        .control-group input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 5px;
+            background: var(--slider-track);
+            border-radius: 3px;
+            outline: none;
+            margin: 8px 0;
+        }
+        .control-group input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #0071e3;
+            cursor: pointer;
+            transition: transform 0.1s ease;
+        }
+        .control-group input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.25);
+        }
+        .btn {
+            background: #0071e3;
+            color: white;
+            border: none;
+            padding: 11px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 13px;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(0, 113, 227, 0.2);
+            width: 100%;
+            margin-bottom: 12px;
+            box-sizing: border-box;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .btn:hover:not(:disabled) {
+            background: #0077ed;
+            box-shadow: 0 6px 16px rgba(0, 113, 227, 0.3);
+        }
+        .btn:active:not(:disabled) {
+            transform: scale(0.98);
+        }
+        .btn:disabled {
+            background: var(--btn-disabled-bg);
+            color: var(--btn-disabled-text);
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+        .btn.secondary {
+            background: var(--btn-secondary);
+            color: var(--text-main);
+            box-shadow: none;
+        }
+        .btn.secondary:hover:not(:disabled) {
+            background: rgba(120, 120, 120, 0.15);
+        }
+        .status-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-sidebar);
+            border-radius: 10px;
+            padding: 12px 16px;
+            margin-bottom: 24px;
+            font-size: 13px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .status-lbl {
+            color: var(--text-muted);
+        }
+        .status-val {
+            color: var(--text-main);
+            font-weight: 500;
+        }
+        .draw-panel {
+            background: var(--card-bg);
+            border: 1px solid var(--border-sidebar);
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .progress-bar-bg {
+            width: 100%;
+            height: 6px;
+            background: var(--slider-track);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 4px;
+        }
+        .progress-bar-fg {
+            width: 0%;
+            height: 100%;
+            background: #30d158;
+            transition: width 0.1s linear;
+        }
+
+        /* 伸缩侧边栏按钮 */
+        .toggle-sidebar-btn {
+            position: absolute;
+            top: 50%;
+            right: -16px;
+            transform: translateY(-50%);
+            width: 16px;
+            height: 54px;
+            background: var(--bg-sidebar);
+            border: 1px solid var(--border-sidebar);
+            border-left: none;
+            border-radius: 0 8px 8px 0;
+            color: var(--text-muted);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            transition: color 0.2s ease, background 0.2s ease;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.15);
+            padding: 0;
+        }
+        .toggle-sidebar-btn:hover {
+            color: #0071e3;
+        }
+        .toggle-sidebar-btn svg {
+            width: 10px;
+            height: 10px;
+            fill: currentColor;
+            transition: transform 0.3s ease;
+        }
+        
+        /* 白天/暗黑主题切换按钮 */
+        .theme-toggle-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 16px;
+            padding: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: color 0.2s ease, transform 0.2s ease;
+            border-radius: 50%;
+        }
+        .theme-toggle-btn:hover {
+            color: #0071e3;
+            transform: scale(1.1);
+            background: rgba(120, 120, 120, 0.15);
+        }
+
+        /* 右下角悬浮框 */
+        .floating-preview {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            width: 120px;
+            height: 120px;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid var(--preview-border);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+            cursor: pointer;
+            z-index: 999;
+            background: var(--preview-bg);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: none;
+        }
+        .floating-preview:hover {
+            transform: scale(1.08) translateY(-4px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+            border-color: #0071e3;
+        }
+        .floating-preview img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .floating-preview-badge {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            background: rgba(0, 0, 0, 0.6);
+            color: #fff;
+            font-size: 9px;
+            padding: 2px 6px;
+            border-radius: 10px;
+            backdrop-filter: blur(4px);
+            font-weight: 600;
+        }
+        
+        /* 原图放大弹窗 */
+        .preview-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--modal-mask);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        .preview-modal.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .modal-content-wrapper {
+            position: relative;
+            max-width: 85%;
+            max-height: 85%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .modal-content-wrapper img {
+            max-width: 100%;
+            max-height: 80vh;
+            border-radius: 8px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+            border: 1px solid var(--border-sidebar);
+        }
+        .close-modal-btn {
+            position: absolute;
+            top: -46px;
+            right: 0;
+            background: rgba(120, 120, 120, 0.2);
+            border: none;
+            color: var(--text-main);
+            font-size: 20px;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s ease, transform 0.2s ease;
+        }
+        .close-modal-btn:hover {
+            background: rgba(120, 120, 120, 0.4);
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar-container" id="sidebar-container">
+        <div class="sidebar">
+        <button class="theme-toggle-btn" onclick="toggleTheme()" title="切换白天/黑夜模式" id="theme-toggle-btn">
+            <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M6 .278a.768.768 0 0 1 .08.858 7.208 7.208 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277.527 0 1.04-.055 1.533-.16a.787.787 0 0 1 .81.316.733.733 0 0 1-.031.893A8.349 8.349 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.752.752 0 0 1 6 .278z"/>
+            </svg>
+        </button>
+        <div class="logo-area">
+            <h1 class="logo-title">Bezier Renderer</h1>
+            <p class="logo-subtitle">Interactive Vectorizer</p>
+        </div>
+
+        <input type="file" id="file-input" accept="image/*" style="display: none;" onchange="handleFileSelect(this)">
+        <div class="upload-area" onclick="document.getElementById('file-input').click()" id="drop-zone">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
+            </svg>
+            <span id="upload-status">拖拽图片或 <strong>点击上传</strong></span>
+        </div>
+
+        <div class="section-title">算法参数调节</div>
+        
+        <div class="control-group">
+            <div class="control-label-row">
+                <span class="control-name">Canny 边缘上限</span>
+                <span class="control-value" id="val-canny-high">200</span>
+            </div>
+            <input type="range" id="canny-high" min="50" max="255" value="200" oninput="updateParam('canny-high', this.value)">
+            <span class="slider-desc">控制边缘检测敏感度，上限越高边缘线条越少</span>
+        </div>
+
+        <div class="control-group">
+            <div class="control-label-row">
+                <span class="control-name">Canny 边缘下限</span>
+                <span class="control-value" id="val-canny-low">30</span>
+            </div>
+            <input type="range" id="canny-low" min="5" max="150" value="30" oninput="updateParam('canny-low', this.value)">
+            <span class="slider-desc">较低的下限能提取出更微弱的渐变轮廓线</span>
+        </div>
+
+        <div class="control-group">
+            <div class="control-label-row">
+                <span class="control-name">噪点过滤 (Turdsize)</span>
+                <span class="control-value" id="val-turdsize">2</span>
+            </div>
+            <input type="range" id="turdsize" min="0" max="30" value="2" oninput="updateParam('turdsize', this.value)">
+            <span class="slider-desc">滤除孤立像素噪点的大小，值越大画面越干净</span>
+        </div>
+
+        <div class="control-group">
+            <div class="control-label-row">
+                <span class="control-name">拟合精度限制 (Opttolerance)</span>
+                <span class="control-value" id="val-opttolerance">0.20</span>
+            </div>
+            <input type="range" id="opttolerance" min="0.01" max="1.00" step="0.01" value="0.20" oninput="updateParam('opttolerance', this.value)">
+            <span class="slider-desc">数值越小，曲线与边缘的误差越小，精度越高</span>
+        </div>
+
+        <div class="control-group">
+            <div class="control-label-row">
+                <span class="control-name">拐角圆润度 (Alphamax)</span>
+                <span class="control-value" id="val-alphamax">1.0</span>
+            </div>
+            <input type="range" id="alphamax" min="0.0" max="1.3" step="0.1" value="1.0" oninput="updateParam('alphamax', this.value)">
+            <span class="slider-desc">拐角算法上限。0.0 为纯折线，1.0+ 为圆滑曲线</span>
+        </div>
+
+        <div class="status-card">
+            <div class="status-row">
+                <span class="status-lbl">图片分辨率:</span>
+                <span class="status-val" id="img-resolution">---</span>
+            </div>
+            <div class="status-row">
+                <span class="status-lbl">曲线段总数:</span>
+                <span class="status-val" id="curves-count">0</span>
+            </div>
+        </div>
+
+        <button class="btn" id="confirm-btn" disabled onclick="confirmImport()">确定导入 Desmos</button>
+
+        <div style="display: flex; gap: 10px; margin-bottom: 12px;">
+            <button class="btn secondary" id="download-png-btn" disabled onclick="downloadPNG()" style="flex: 1; margin-bottom: 0;">下载 PNG 图片</button>
+            <button class="btn secondary" id="download-txt-btn" disabled onclick="downloadTXT()" style="flex: 1; margin-bottom: 0;">下载公式 TXT</button>
+        </div>
+
+        <div class="section-title">动态播放与演示</div>
+        <div class="draw-panel">
+            <button class="btn secondary" id="draw-btn" disabled onclick="startStepByStepDraw()">逐步绘制</button>
+            <button class="btn secondary danger" id="pause-btn" style="display: none;" onclick="togglePause()">暂停</button>
+            <button class="btn secondary" id="reset-btn" style="display: none;" onclick="resetDraw()">重置</button>
+            <div class="speed-container" style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #a1a1aa;">
+                <span>时间间隔:</span>
+                <input type="range" id="speed-range" min="1" max="150" value="10" oninput="document.getElementById('speed-val-lbl').innerText = this.value+'ms'" style="width: 120px;">
+                <span id="speed-val-lbl">10ms</span>
+            </div>
+            <div id="progress-wrapper" style="display: none;">
+                <div style="display: flex; justify-content: space-between; font-size: 11px; color: #86868b;">
+                    <span>绘制进度</span>
+                    <span id="progress-text">0 / 0</span>
+                </div>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fg" id="progress-bar"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <button class="toggle-sidebar-btn" onclick="toggleSidebar()" title="收起/展开控制面板">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
+        </svg>
+    </button>
+</div>
+
+    <div class="main-content" id="calculator"></div>
+
+    <!-- 右下角原图悬浮预览 -->
+    <div class="floating-preview" id="floating-preview-card" onclick="openPreviewModal()">
+        <span class="floating-preview-badge">原图对比</span>
+        <img id="floating-preview-img" src="" alt="Original Preview">
+    </div>
+
+    <!-- 原图放大模态弹窗 -->
+    <div class="preview-modal" id="preview-modal" onclick="closePreviewModal()">
+        <div class="modal-content-wrapper" onclick="event.stopPropagation()">
+            <button class="close-modal-btn" onclick="closePreviewModal()">&times;</button>
+            <img id="modal-preview-img" src="" alt="Original Fullsize">
+        </div>
+    </div>
+
+    <script>
+        var elt = document.getElementById('calculator');
+        var calculator = Desmos.GraphingCalculator(elt, {
+            expressionsCollapsed: false,
+            adminSettings: {
+                showGrid: true
+            },
+            invertedColors: false
+        });
+
+        // 默认初始化一些全局配置
+        calculator.setMathBounds({ left: -100, right: 1000, bottom: -100, top: 1000 });
+        
+        // 全局交互状态
+        var currentLatexList = [];
+        var isImported = false;
+        var isStepDrawing = false;
+        var isStepPaused = false;
+        var stepIndex = 0;
+        var stepTimer = null;
+        var debounceTimer = null;
+        var hasImage = false;
+
+        // 拖拽上传支持
+        var dropZone = document.getElementById('drop-zone');
+        dropZone.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            dropZone.style.borderColor = '#0071e3';
+        });
+        dropZone.addEventListener('dragleave', function(e) {
+            e.preventDefault();
+            dropZone.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+        });
+        dropZone.addEventListener('drop', function(e) {
+            e.preventDefault();
+            dropZone.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+            if (e.dataTransfer.files.length > 0) {
+                uploadImage(e.dataTransfer.files[0]);
+            }
+        });
+
+        function handleFileSelect(input) {
+            if (input.files.length > 0) {
+                uploadImage(input.files[0]);
+            }
+        }
+
+        // 1. 上传图片核心逻辑
+        function uploadImage(file) {
+            // 将上传的图片读取并缓存为 DataURL 用于右下角对比
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('floating-preview-img').src = e.target.result;
+                document.getElementById('modal-preview-img').src = e.target.result;
+                document.getElementById('floating-preview-card').style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+
+            var statusEl = document.getElementById('upload-status');
+            statusEl.innerHTML = "正在上传并检测边缘...";
+            
+            var formData = new FormData();
+            formData.append('image', file);
+
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => {
+                if (!res.ok) throw new Error("上传失败");
+                return res.json();
+            })
+            .then(data => {
+                hasImage = true;
+                isImported = false;
+                statusEl.innerHTML = "图片已载入，可调节参数";
+                
+                // 动态根据图片分辨率设置 Desmos 视野范围
+                document.getElementById('img-resolution').innerText = `${data.width} x ${data.height}`;
+                calculator.setMathBounds({
+                    left: -Math.round(data.width * 0.1),
+                    right: Math.round(data.width * 1.1),
+                    bottom: -Math.round(data.height * 0.1),
+                    top: Math.round(data.height * 1.1)
+                });
+
+                // 解禁按钮
+                document.getElementById('confirm-btn').disabled = false;
+                document.getElementById('draw-btn').disabled = false;
+                document.getElementById('download-png-btn').disabled = false;
+                document.getElementById('download-txt-btn').disabled = false;
+
+                // 首次渲染曲线
+                renderCurves(data.result);
+            })
+            .catch(err => {
+                statusEl.innerHTML = "<span style='color:#ff3b30;'>载入失败，请重试</span>";
+                console.error(err);
+            });
+        }
+
+        // 2. 实时滑块联动与 Debounce 发送
+        function updateParam(id, val) {
+            document.getElementById('val-' + id).innerText = val;
+            if (!hasImage) return;
+
+            // 150ms 抖动消除防洪
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                requestNewCurves();
+            }, 150);
+        }
+
+        function requestNewCurves() {
+            var params = {
+                canny_high: parseInt(document.getElementById('canny-high').value),
+                canny_low: parseInt(document.getElementById('canny-low').value),
+                turdsize: parseInt(document.getElementById('turdsize').value),
+                alphamax: parseFloat(document.getElementById('alphamax').value),
+                opttolerance: parseFloat(document.getElementById('opttolerance').value)
+            };
+
+            fetch('/process', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(params)
+            })
+            .then(res => res.json())
+            .then(data => {
+                renderCurves(data.result);
+            })
+            .catch(err => console.error("Process error:", err));
+        }
+
+        // 3. 渲染曲线逻辑
+        function renderCurves(result) {
+            currentLatexList = result;
+            document.getElementById('curves-count').innerText = result.length;
+
+            // 如果当前不在逐步绘制过程中，就将曲线注入 Desmos
+            if (!isStepDrawing) {
+                var state = calculator.getState();
+                
+                // 清理旧曲线
+                state.expressions.list = state.expressions.list.filter(expr => !expr.id.startsWith('expr-'));
+                
+                // 添加新曲线。在确定导入之前，为了整洁，我们在列表里将它们设为 secret: true
+                for (var expr of result) {
+                    state.expressions.list.push({
+                        id: expr.id,
+                        latex: expr.latex,
+                        color: expr.color,
+                        type: "expression",
+                        secret: !isImported,
+                        hidden: false
+                    });
+                }
+                
+                calculator.setState(state, {allowUndo: false});
+            }
+        }
+
+        // 4. 确定导入逻辑 (将 secret 改为 false，显示在左侧计算器列表中)
+        function confirmImport() {
+            if (!hasImage || currentLatexList.length === 0) return;
+            isImported = true;
+
+            var state = calculator.getState();
+            for (var expr of state.expressions.list) {
+                if (expr.id && expr.id.startsWith('expr-')) {
+                    expr.secret = false;
+                    expr.hidden = false;
+                }
+            }
+            calculator.setState(state, {allowUndo: false});
+            
+            // 锁定确定导入按钮
+            document.getElementById('confirm-btn').innerText = "已导入公式列表";
+            document.getElementById('confirm-btn').disabled = true;
+        }
+
+        // 5. 逐步绘制逻辑
+        function setUIState(drawing, paused) {
+            document.getElementById('draw-btn').style.display = drawing ? 'none' : 'inline-block';
+            document.getElementById('pause-btn').style.display = drawing ? 'inline-block' : 'none';
+            document.getElementById('pause-btn').innerText = paused ? '继续' : '暂停';
+            document.getElementById('reset-btn').style.display = (drawing || stepIndex > 0) ? 'inline-block' : 'none';
+            document.getElementById('progress-wrapper').style.display = (drawing || stepIndex > 0) ? 'block' : 'none';
+        }
+
+        function togglePause() {
+            if (!isStepDrawing) return;
+            if (isStepPaused) {
+                isStepPaused = false;
+                setUIState(true, false);
+                scheduleNextLine();
+            } else {
+                isStepPaused = true;
+                if (stepTimer) clearTimeout(stepTimer);
+                setUIState(true, true);
+            }
+        }
+
+        function resetDraw() {
+            isStepDrawing = false;
+            isStepPaused = false;
+            stepIndex = 0;
+            if (stepTimer) clearTimeout(stepTimer);
+
+            // 隐藏所有公式
+            var state = calculator.getState();
+            for (var expr of state.expressions.list) {
+                if (expr.id && expr.id.startsWith('expr-')) {
+                    expr.hidden = true;
+                }
+            }
+            calculator.setState(state, {allowUndo: false});
+
+            // 清理高亮
+            var prevActive = document.querySelector('.dcg-active-drawing-item');
+            if (prevActive) {
+                prevActive.classList.remove('dcg-active-drawing-item');
+                prevActive.style.backgroundColor = '';
+            }
+
+            document.getElementById('progress-bar').style.width = '0%';
+            document.getElementById('progress-text').innerText = `0 / ${currentLatexList.length}`;
+            setUIState(false, false);
+        }
+
+        function startStepByStepDraw() {
+            if (currentLatexList.length === 0) return;
+
+            isStepDrawing = true;
+            isStepPaused = false;
+            stepIndex = 0;
+            if (stepTimer) clearTimeout(stepTimer);
+
+            // 1. 将所有曲线公式设为 hidden: true (隐藏)
+            var state = calculator.getState();
+            for (var expr of state.expressions.list) {
+                if (expr.id && expr.id.startsWith('expr-')) {
+                    expr.hidden = true;
+                }
+            }
+            calculator.setState(state, {allowUndo: false});
+
+            // 2. 更新进度控制和 UI
+            setUIState(true, false);
+            document.getElementById('progress-bar').style.width = '0%';
+            document.getElementById('progress-text').innerText = `0 / ${currentLatexList.length}`;
+
+            // 3. 开始依次点亮
+            scheduleNextLine();
+        }
+
+        function scheduleNextLine() {
+            if (!isStepDrawing || isStepPaused) return;
+
+            var delay = parseInt(document.getElementById('speed-range').value) || 10;
+            stepTimer = setTimeout(() => {
+                drawNextLine();
+            }, delay);
+        }
+
+        function drawNextLine() {
+            if (!isStepDrawing || isStepPaused) return;
+
+            if (stepIndex < currentLatexList.length) {
+                var expr = currentLatexList[stepIndex];
+
+                // 增量点亮
+                calculator.setExpression({
+                    id: expr.id,
+                    hidden: false
+                });
+
+                // 同步滚动与高亮左侧公式列表 (如果在“确定导入”状态下)
+                if (isImported) {
+                    try {
+                        var el = document.querySelector('[expr-id="' + expr.id + '"]');
+                        if (!el) {
+                            var items = document.querySelectorAll('.dcg-expressionitem');
+                            if (items && items.length > 0) {
+                                for (var item of items) {
+                                    if (item.getAttribute('expr-id') === expr.id) {
+                                        el = item;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if (el) {
+                            var prevActive = document.querySelector('.dcg-active-drawing-item');
+                            if (prevActive) {
+                                prevActive.classList.remove('dcg-active-drawing-item');
+                                prevActive.style.backgroundColor = '';
+                            }
+                            el.classList.add('dcg-active-drawing-item');
+                            el.style.backgroundColor = 'rgba(0, 113, 227, 0.08)';
+                            el.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+                        }
+                    } catch (scrollErr) {
+                        console.log("Scroll sync error:", scrollErr);
+                    }
+                }
+
+                stepIndex++;
+
+                var pct = (stepIndex / currentLatexList.length) * 100;
+                document.getElementById('progress-bar').style.width = pct + '%';
+                document.getElementById('progress-text').innerText = `${stepIndex} / ${currentLatexList.length}`;
+
+                scheduleNextLine();
+            } else {
+                isStepDrawing = false;
+                setUIState(false, false);
+
+                // 清除高亮
+                var prevActive = document.querySelector('.dcg-active-drawing-item');
+                if (prevActive) {
+                    prevActive.classList.remove('dcg-active-drawing-item');
+                    prevActive.style.backgroundColor = '';
+                }
+            }
+        }
+
+        // --- 以下为新增交互函数 ---
+        // 1. 折叠/展开侧边栏
+        function toggleSidebar() {
+            document.body.classList.toggle('sidebar-collapsed');
+            calculator.resize();
+            setTimeout(() => {
+                calculator.resize();
+            }, 310);
+        }
+
+        // 2. 白天/黑夜模式切换
+        function toggleTheme() {
+            var isDark = document.body.classList.toggle('dark-theme');
+            
+            // 同步切换 Desmos 计算器的黑白主题（反色控制）
+            calculator.updateSettings({
+                invertedColors: isDark
+            });
+
+            // 切换按钮图标
+            var btn = document.getElementById('theme-toggle-btn');
+            if (isDark) {
+                btn.innerHTML = `
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                        <path d="M8 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0 1a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM8 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 0zm0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 13zm8-5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5zM3 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 3 8zm10.657-5.657a.5.5 0 0 1 0 .707l-1.414 1.415a.5.5 0 1 1-.707-.708l1.414-1.414a.5.5 0 0 1 .707 0zm-9.193 9.193a.5.5 0 0 1 0 .707L3.05 13.657a.5.5 0 0 1-.707-.707l1.414-1.414a.5.5 0 0 1 .707 0zm9.193 2.121a.5.5 0 0 1-.707 0l-1.414-1.414a.5.5 0 0 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .707zM4.464 4.465a.5.5 0 0 1-.707 0L2.343 3.05a.5.5 0 1 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .708z"/>
+                    </svg>
+                `;
+            } else {
+                btn.innerHTML = `
+                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                        <path d="M6 .278a.768.768 0 0 1 .08.858 7.208 7.208 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277.527 0 1.04-.055 1.533-.16a.787.787 0 0 1 .81.316.733.733 0 0 1-.031.893A8.349 8.349 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.752.752 0 0 1 6 .278z"/>
+                    </svg>
+                `;
+            }
+        }
+
+        // 3. 打开/关闭大图弹窗
+        function openPreviewModal() {
+            document.getElementById('preview-modal').classList.add('active');
+        }
+        
+        function closePreviewModal() {
+            document.getElementById('preview-modal').classList.remove('active');
+        }
+
+        // 4. 下载高清线条图 (PNG)
+        function downloadPNG() {
+            if (currentLatexList.length === 0) return;
+            var statusEl = document.getElementById('upload-status');
+            var oldText = statusEl.innerHTML;
+            statusEl.innerHTML = "正在导出高清图片...";
+
+            // 调用 Desmos 官方 API 进行高清屏幕截图
+            calculator.asyncScreenshot({
+                width: 1920,
+                height: 1080,
+                targetWidth: 1920,
+                targetHeight: 1080
+            }, function(dataUrl) {
+                statusEl.innerHTML = oldText;
+                var link = document.createElement('a');
+                link.download = 'desmos_bezier_render.png';
+                link.href = dataUrl;
+                link.click();
+            });
+        }
+
+        // 5. 下载公式文本 (TXT)
+        function downloadTXT() {
+            if (currentLatexList.length === 0) return;
+            
+            // 将所有 LaTeX 公式按换行拼接为纯文本
+            var content = currentLatexList.map(item => item.latex).join('\n');
+            var blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+            var dataUrl = URL.createObjectURL(blob);
+            
+            var link = document.createElement('a');
+            link.download = 'desmos_equations.txt';
+            link.href = dataUrl;
+            link.click();
+            
+            URL.revokeObjectURL(dataUrl);
+        }
+    </script>
+</body>
+</html>
