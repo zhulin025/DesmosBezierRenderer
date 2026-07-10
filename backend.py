@@ -196,4 +196,4 @@ if __name__ == '__main__':
         webbrowser.open(f'http://127.0.0.1:{PORT}/calculator')
     Timer(1, open_browser).start()
 
-    app.run(host='127.0.0.1', port=PORT)
+    app.run(host='0.0.0.0', port=PORT)
