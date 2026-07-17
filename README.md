@@ -109,11 +109,11 @@ pyinstaller --noconfirm --onedir --windowed --name "DesmosBezierRenderer" --hidd
 
 ## 🌐 线上部署
 
-当前项目部署在阿里云轻量应用服务器，免费短入口使用 `nip.io` 通配 DNS 和独立 HTTPS 证书：
+当前项目部署在阿里云轻量应用服务器，并绑定自有域名和独立 HTTPS 证书：
 
-👉 **[https://47.254.246.41.nip.io](https://47.254.246.41.nip.io)**
+👉 **[https://cal.liuwa.xyz](https://cal.liuwa.xyz)**
 
-`nip.io` 会把域名中包含的 IP 自动解析到对应服务器，不需要注册账号。它是第三方免费公共 DNS，适合当前演示使用；长期正式运营建议购买并绑定自有短域名。
+备用入口仍保留为 [https://47.254.246.41.nip.io](https://47.254.246.41.nip.io)。
 
 服务器沿用现有 Python/Flask 运行环境。更新时在服务器项目目录拉取 GitHub `master` 分支、安装依赖并重启现有服务进程；不要另建 Render、Docker 或其他托管项目。
 
