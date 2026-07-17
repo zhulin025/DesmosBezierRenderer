@@ -43,6 +43,8 @@ MAX_INPUT_PIXELS = 1_200_000
 MAX_INPUT_SIDE = 1400
 MAX_EXPRESSIONS = 5000
 MIN_PROCESS_SIDE = 320
+CUTOUT_MAX_SIDE = 520
+CUTOUT_MAX_PIXELS = 160_000
 
 
 def resize_for_processing(image, scale=1.0):
@@ -61,6 +63,18 @@ def resize_for_processing(image, scale=1.0):
 def create_cutout_candidate(image):
     """使用 GrabCut 在本地提取居中的主要人物/建筑，并生成透明预览。"""
     working = resize_for_processing(image)
+    cutout_height, cutout_width = working.shape[:2]
+    cutout_scale = min(
+        1.0,
+        CUTOUT_MAX_SIDE / float(max(cutout_width, cutout_height)),
+        (CUTOUT_MAX_PIXELS / float(cutout_width * cutout_height)) ** 0.5,
+    )
+    if cutout_scale < 0.999:
+        working = cv2.resize(
+            working,
+            (max(1, int(cutout_width * cutout_scale)), max(1, int(cutout_height * cutout_scale))),
+            interpolation=cv2.INTER_AREA,
+        )
     height, width = working.shape[:2]
     if min(height, width) < 20:
         raise ValueError('图片尺寸太小，无法抠图')
@@ -73,7 +87,7 @@ def create_cutout_candidate(image):
     foreground_model = np.zeros((1, 65), np.float64)
     cv2.grabCut(
         working, mask, rect, background_model, foreground_model,
-        5, cv2.GC_INIT_WITH_RECT
+        2, cv2.GC_INIT_WITH_RECT
     )
     foreground_mask = np.where(
         (mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD), 255, 0
@@ -296,6 +310,21 @@ def confirm_cutout():
     except Exception as e:
         traceback.print_exc()
         return {'error': str(e)}, 500
+
+
+@app.route('/source/original', methods=['POST'])
+def use_original_source():
+    """切回用户最初上传的原图，公式生成仍由 /process 单独执行。"""
+    global ORIGINAL_IMAGE, UPLOADED_IMAGE, CUTOUT_CANDIDATE
+    if ORIGINAL_IMAGE is None:
+        return {'error': '请先上传图片'}, 400
+    UPLOADED_IMAGE = ORIGINAL_IMAGE.copy()
+    CUTOUT_CANDIDATE = None
+    return {
+        'selected': 'original',
+        'width': UPLOADED_IMAGE.shape[1],
+        'height': UPLOADED_IMAGE.shape[0],
+    }
 
 
 @app.route('/process', methods=['POST'])

@@ -166,6 +166,8 @@
         .workflow-bar.indeterminate { width: 38%; animation: workflow-slide 1.15s ease-in-out infinite; }
         @keyframes workflow-spin { to { transform: rotate(360deg); } }
         @keyframes workflow-slide { from { transform: translateX(-110%); } to { transform: translateX(290%); } }
+        .source-actions { display: flex; gap: 10px; margin: -12px 0 22px; }
+        .source-actions .btn { margin: 0; }
         .section-title {
             font-size: 13px;
             font-weight: 600;
@@ -494,6 +496,9 @@
             <h1 class="logo-title">Bezier Renderer</h1>
             <p class="logo-subtitle">Interactive Vectorizer</p>
         </div>
+        <div class="source-actions">
+            <button class="btn secondary" id="use-original-btn" disabled onclick="generateFromOriginal()">用原图生成</button>
+        </div>
 
         <input type="file" id="file-input" accept="image/*" style="display: none;" onchange="handleFileSelect(this)">
         <div class="upload-area" onclick="document.getElementById('file-input').click()" id="drop-zone">
@@ -584,6 +589,15 @@
             <span class="slider-desc">拐角算法上限。0.0 为纯折线，1.0+ 为圆滑曲线</span>
         </div>
 
+        <div class="control-group">
+            <div class="control-label-row">
+                <span class="control-name">线条粗细</span>
+                <span class="control-value" id="val-line-width">1.00</span>
+            </div>
+            <input type="range" id="line-width" min="0.5" max="4" step="0.25" value="1" oninput="updateParam('line-width', this.value)">
+            <span class="slider-desc">控制 Desmos 曲线显示宽度，修改后点击“重新导入”生效</span>
+        </div>
+
         <div class="status-card">
             <div class="status-row">
                 <span class="status-lbl">图片分辨率:</span>
@@ -659,12 +673,9 @@
         var isStepPaused = false;
         var stepIndex = 0;
         var stepTimer = null;
-        var debounceTimer = null;
         var hasImage = false;
         var processController = null;
-        var autoCutoutRequested = false;
-        var pendingAutoResult = null;
-        var cutoutWasAutomatic = false;
+        var originalPreviewUrl = '';
 
         function setWorkflow(message, percent, indeterminate, done) {
             var wrapper = document.getElementById('workflow-progress');
@@ -740,14 +751,12 @@
 
         // 1. 上传图片核心逻辑
         function uploadImage(file) {
-            autoCutoutRequested = false;
-            pendingAutoResult = null;
-            cutoutWasAutomatic = false;
             hasImage = false;
             clearRenderedCurves();
             // 将上传的图片读取并缓存为 DataURL 用于右下角对比
             var reader = new FileReader();
             reader.onload = function(e) {
+                originalPreviewUrl = e.target.result;
                 document.getElementById('floating-preview-img').src = e.target.result;
                 document.getElementById('modal-preview-img').src = e.target.result;
                 document.getElementById('floating-preview-card').style.display = 'block';
@@ -755,7 +764,7 @@
             reader.readAsDataURL(file);
 
             var statusEl = document.getElementById('upload-status');
-            statusEl.innerHTML = "步骤 1/2：正在上传图片";
+            statusEl.innerHTML = "步骤 1/3：正在上传图片";
             setWorkflow('正在上传图片…', 0, false, false);
             
             var formData = new FormData();
@@ -775,10 +784,11 @@
                 }
                 hasImage = true;
                 isImported = true;
+                document.getElementById('use-original-btn').disabled = false;
                 document.getElementById('img-resolution').innerText = `${data.width} x ${data.height}`;
-                statusEl.innerHTML = "步骤 2/2：图片上传完成，正在分析并生成公式";
-                setWorkflow('正在检测边缘并生成 Desmos 公式…', null, true, false);
-                requestNewCurves(true);
+                statusEl.innerHTML = "步骤 2/3：图片上传完成，正在智能抠图";
+                setWorkflow('正在提取图片主体…', null, true, false);
+                requestCutout(true);
             };
             xhr.onerror = function() { handleUploadError(new Error('网络连接失败')); };
             xhr.send(formData);
@@ -790,16 +800,16 @@
             }
         }
 
-        // 2. 实时滑块联动与 Debounce 发送
+        // 参数只记录修改；用户点击“重新导入 Desmos”后才重新计算。
         function updateParam(id, val) {
-            document.getElementById('val-' + id).innerText = val;
+            document.getElementById('val-' + id).innerText = id === 'line-width'
+                ? Number(val).toFixed(2)
+                : val;
             if (!hasImage) return;
-
-            // 150ms 抖动消除防洪
-            clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(() => {
-                requestNewCurves();
-            }, 150);
+            var button = document.getElementById('confirm-btn');
+            button.disabled = false;
+            button.innerText = '应用参数并重新导入';
+            document.getElementById('complexity-status').innerText = '参数已修改，等待重新导入';
         }
 
         function requestNewCurves(initialProcessing) {
@@ -817,7 +827,7 @@
             document.getElementById('complexity-status').innerText = '正在重新计算…';
             if (!initialProcessing) setWorkflow('正在按新参数重新绘制…', null, true, false);
 
-            fetch('/process', {
+            return fetch('/process', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(params),
@@ -830,22 +840,11 @@
             .then(data => {
                 if (controller !== processController) return;
                 showProcessingInfo(data);
-                if (data.processing && data.processing.truncated) {
-                    pendingAutoResult = data;
-                    clearRenderedCurves();
-                    document.getElementById('upload-status').innerText = '分析完成：超过 5000 条，等待智能抠图';
-                    setWorkflow('公式过多，正在提取主要主体…', null, true, false);
-                } else {
-                    pendingAutoResult = null;
-                    renderCurves(data.result);
-                    enableResultActions();
-                    document.getElementById('upload-status').innerText = initialProcessing ? '图片分析完成并已绘制' : '参数更新完成并已绘制';
-                    setWorkflow('绘制完成', 100, false, true);
-                }
-                if (data.processing && data.processing.truncated && !autoCutoutRequested) {
-                    autoCutoutRequested = true;
-                    requestCutout(true);
-                }
+                renderCurves(data.result);
+                enableResultActions();
+                document.getElementById('confirm-btn').innerText = '重新导入 Desmos';
+                document.getElementById('upload-status').innerText = initialProcessing ? '图片处理完成并已绘制' : '参数已应用并重新绘制';
+                setWorkflow('边缘分析与公式生成完成', 100, false, true);
             })
             .catch(err => {
                 if (err.name !== 'AbortError') {
@@ -868,6 +867,7 @@
         function renderCurves(result) {
             currentLatexList = result;
             document.getElementById('curves-count').innerText = result.length;
+            var selectedLineWidth = parseFloat(document.getElementById('line-width').value) || 1;
 
             // 如果当前不在逐步绘制过程中，就将曲线注入 Desmos
             if (!isStepDrawing) {
@@ -884,7 +884,8 @@
                         color: expr.color,
                         type: "expression",
                         secret: false,
-                        hidden: false
+                        hidden: false,
+                        lineWidth: selectedLineWidth
                     });
                 }
                 
@@ -894,21 +895,11 @@
 
         // 手动重新导入入口保留在高级参数折叠区内。
         function confirmImport() {
-            if (!hasImage || currentLatexList.length === 0) return;
-            isImported = true;
-
-            var state = calculator.getState();
-            for (var expr of state.expressions.list) {
-                if (expr.id && expr.id.startsWith('expr-')) {
-                    expr.secret = false;
-                    expr.hidden = false;
-                }
-            }
-            calculator.setState(state, {allowUndo: false});
-            
+            if (!hasImage) return;
             var button = document.getElementById('confirm-btn');
-            button.innerText = "已重新导入";
-            setTimeout(() => button.innerText = "重新导入 Desmos", 1200);
+            button.disabled = true;
+            button.innerText = '正在重新生成…';
+            requestNewCurves(false);
         }
 
         function requestCutout(automatic) {
@@ -917,12 +908,11 @@
             var hint = document.getElementById('cutout-hint');
             var preview = document.getElementById('cutout-preview-img');
             var confirmButton = document.getElementById('confirm-cutout-btn');
-            cutoutWasAutomatic = automatic;
-            modal.classList.add('active');
+            modal.classList.toggle('active', !automatic);
             preview.style.display = 'none';
             confirmButton.disabled = true;
             hint.innerText = automatic
-                ? '图片处理后仍超过 5000 条表达式，正在自动提取主要主体…'
+                ? '正在自动提取主要人物或建筑…'
                 : '正在识别主要人物或建筑…';
             setWorkflow(automatic ? '正在提取主要主体…' : '正在生成抠图预览…', null, true, false);
 
@@ -934,14 +924,27 @@
             })
             .then(data => {
                 preview.src = data.preview;
-                preview.style.display = 'block';
-                hint.innerText = `已提取主体（约占画面 ${data.coverage}%），请确认边缘是否正确`;
-                confirmButton.disabled = false;
-                setWorkflow('抠图完成，等待你的确认', 100, false, false);
+                if (automatic) {
+                    document.getElementById('floating-preview-img').src = data.preview;
+                    document.getElementById('modal-preview-img').src = data.preview;
+                    document.getElementById('upload-status').innerText = '步骤 3/3：抠图完成，正在边缘分析与公式生成';
+                    setWorkflow('正在进行边缘分析与公式生成…', null, true, false);
+                    applyCutoutAndGenerate(data.preview, true);
+                } else {
+                    preview.style.display = 'block';
+                    hint.innerText = `已提取主体（约占画面 ${data.coverage}%），请确认边缘是否正确`;
+                    confirmButton.disabled = false;
+                    setWorkflow('抠图完成，等待你的确认', 100, false, false);
+                }
             })
             .catch(err => {
-                hint.innerText = err.message || '抠图失败，请保留原图继续调节参数';
-                setWorkflow('抠图失败，可选择保留原图', 100, false, false);
+                if (automatic) {
+                    document.getElementById('upload-status').innerText = '自动抠图失败，正在改用原图生成';
+                    generateFromOriginal();
+                } else {
+                    hint.innerText = err.message || '抠图失败，请保留原图继续调节参数';
+                    setWorkflow('抠图失败，可选择保留原图', 100, false, false);
+                }
             });
         }
 
@@ -951,22 +954,17 @@
 
         function keepOriginalAfterCutout() {
             closeCutoutModal();
-            if (cutoutWasAutomatic && pendingAutoResult) {
-                showProcessingInfo(pendingAutoResult);
-                renderCurves(pendingAutoResult.result);
-                enableResultActions();
-                document.getElementById('upload-status').innerText = '已保留原图并绘制 5000 条公式';
-                setWorkflow('已按原图绘制', 100, false, true);
-                pendingAutoResult = null;
-            }
-            cutoutWasAutomatic = false;
         }
 
         function confirmCutout() {
+            applyCutoutAndGenerate(document.getElementById('cutout-preview-img').src, false);
+        }
+
+        function applyCutoutAndGenerate(previewUrl, automatic) {
             var button = document.getElementById('confirm-cutout-btn');
             button.disabled = true;
             button.innerText = '正在重新绘制…';
-            setWorkflow('已确认抠图，正在重新生成公式…', null, true, false);
+            if (!automatic) setWorkflow('已确认抠图，正在进行边缘分析与公式生成…', null, true, false);
             fetch('/cutout/confirm', { method: 'POST' })
             .then(async res => {
                 var data = await res.json();
@@ -974,16 +972,13 @@
                 return data;
             })
             .then(data => {
-                var previewUrl = document.getElementById('cutout-preview-img').src;
                 document.getElementById('floating-preview-img').src = previewUrl;
                 document.getElementById('modal-preview-img').src = previewUrl;
                 showProcessingInfo(data);
                 renderCurves(data.result);
                 enableResultActions();
-                pendingAutoResult = null;
-                cutoutWasAutomatic = false;
-                document.getElementById('upload-status').innerText = '已采用抠图并自动绘制';
-                setWorkflow('抠图结果绘制完成', 100, false, true);
+                document.getElementById('upload-status').innerText = automatic ? '抠图、边缘分析与公式生成完成' : '已采用新抠图并重新绘制';
+                setWorkflow('主体图公式生成完成', 100, false, true);
                 closeCutoutModal();
             })
             .catch(err => {
@@ -994,6 +989,28 @@
                 button.disabled = false;
                 button.innerText = '确认并重新绘制';
             });
+        }
+
+        function generateFromOriginal() {
+            if (!hasImage) return;
+            clearRenderedCurves();
+            document.getElementById('use-original-btn').disabled = true;
+            document.getElementById('floating-preview-img').src = originalPreviewUrl;
+            document.getElementById('modal-preview-img').src = originalPreviewUrl;
+            document.getElementById('upload-status').innerText = '已选择原图，正在边缘分析与公式生成';
+            setWorkflow('正在用原图进行边缘分析与公式生成…', null, true, false);
+            fetch('/source/original', { method: 'POST' })
+            .then(async res => {
+                var data = await res.json();
+                if (!res.ok) throw new Error(data.error || '切换原图失败');
+                return data;
+            })
+            .then(() => requestNewCurves(true))
+            .catch(err => {
+                document.getElementById('upload-status').innerText = err.message;
+                setWorkflow('用原图生成失败', 100, false, true);
+            })
+            .finally(() => document.getElementById('use-original-btn').disabled = false);
         }
 
         // 5. 逐步绘制逻辑
