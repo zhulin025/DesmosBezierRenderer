@@ -109,9 +109,11 @@ pyinstaller --noconfirm --onedir --windowed --name "DesmosBezierRenderer" --hidd
 
 ## 🌐 线上部署
 
-当前项目部署在阿里云轻量应用服务器：
+当前项目部署在阿里云轻量应用服务器，正式入口使用独立域名证书：
 
-👉 **[https://47.254.246.41:5000/calculator](https://47.254.246.41:5000/calculator)**
+👉 **[https://desmos.47.254.246.41.sslip.io/calculator](https://desmos.47.254.246.41.sslip.io/calculator)**
+
+旧的 IP 入口 `https://47.254.246.41:5000/calculator` 仅作为兼容地址保留。部分浏览器对直接签发给 IP 的证书提示不一致，日常访问请使用上面的域名入口。
 
 服务器沿用现有 Python/Flask 运行环境。更新时在服务器项目目录拉取 GitHub `master` 分支、安装依赖并重启现有服务进程；不要另建 Render、Docker 或其他托管项目。
 

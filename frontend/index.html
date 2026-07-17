@@ -151,6 +151,21 @@
         .upload-area strong {
             color: var(--text-main);
         }
+        .workflow-progress { width: 100%; display: none; margin-top: 4px; }
+        .workflow-progress.active { display: block; }
+        .workflow-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+        .loading-spinner {
+            width: 15px; height: 15px; flex: 0 0 auto; border-radius: 50%;
+            border: 2px solid rgba(0,113,227,.2); border-top-color: #0071e3;
+            animation: workflow-spin .75s linear infinite;
+        }
+        .workflow-message { flex: 1; text-align: left; color: var(--text-main); font-size: 12px; }
+        .workflow-percent { color: #0071e3; font-size: 12px; font-weight: 600; }
+        .workflow-track { height: 5px; overflow: hidden; border-radius: 4px; background: var(--slider-track); }
+        .workflow-bar { height: 100%; width: 0; border-radius: inherit; background: #0071e3; transition: width .2s ease; }
+        .workflow-bar.indeterminate { width: 38%; animation: workflow-slide 1.15s ease-in-out infinite; }
+        @keyframes workflow-spin { to { transform: rotate(360deg); } }
+        @keyframes workflow-slide { from { transform: translateX(-110%); } to { transform: translateX(290%); } }
         .section-title {
             font-size: 13px;
             font-weight: 600;
@@ -486,6 +501,14 @@
                 <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
             </svg>
             <span id="upload-status">拖拽图片或 <strong>点击上传</strong></span>
+            <div class="workflow-progress" id="workflow-progress">
+                <div class="workflow-row">
+                    <span class="loading-spinner" id="workflow-spinner"></span>
+                    <span class="workflow-message" id="workflow-message"></span>
+                    <span class="workflow-percent" id="workflow-percent"></span>
+                </div>
+                <div class="workflow-track"><div class="workflow-bar" id="workflow-bar"></div></div>
+            </div>
         </div>
 
         <div class="section-title">动态播放与演示</div>
@@ -598,11 +621,11 @@
 
     <div class="preview-modal" id="cutout-modal">
         <div class="modal-content-wrapper" onclick="event.stopPropagation()">
-            <button class="close-modal-btn" onclick="closeCutoutModal()">&times;</button>
+            <button class="close-modal-btn" onclick="keepOriginalAfterCutout()">&times;</button>
             <div id="cutout-hint" style="color:var(--text-main);margin-bottom:12px;font-size:14px;">正在识别主要人物或建筑…</div>
             <img id="cutout-preview-img" src="" alt="抠图预览" style="display:none;background:repeating-conic-gradient(#ddd 0 25%,#fff 0 50%) 50%/16px 16px;">
             <div class="cutout-actions">
-                <button class="btn secondary" onclick="closeCutoutModal()">保留原图</button>
+                <button class="btn secondary" onclick="keepOriginalAfterCutout()">保留原图</button>
                 <button class="btn" id="confirm-cutout-btn" disabled onclick="confirmCutout()">确认并重新绘制</button>
             </div>
         </div>
@@ -640,6 +663,29 @@
         var hasImage = false;
         var processController = null;
         var autoCutoutRequested = false;
+        var pendingAutoResult = null;
+        var cutoutWasAutomatic = false;
+
+        function setWorkflow(message, percent, indeterminate, done) {
+            var wrapper = document.getElementById('workflow-progress');
+            var bar = document.getElementById('workflow-bar');
+            wrapper.classList.add('active');
+            document.getElementById('workflow-message').innerText = message;
+            document.getElementById('workflow-percent').innerText = percent == null ? '' : `${Math.round(percent)}%`;
+            document.getElementById('workflow-spinner').style.display = done ? 'none' : 'block';
+            bar.classList.toggle('indeterminate', !!indeterminate);
+            if (!indeterminate) bar.style.width = `${Math.max(0, Math.min(100, percent || 0))}%`;
+            if (done) setTimeout(() => wrapper.classList.remove('active'), 1800);
+        }
+
+        function clearRenderedCurves() {
+            currentLatexList = [];
+            document.getElementById('curves-count').innerText = '0';
+            var state = calculator.getState();
+            state.expressions.list = state.expressions.list.filter(expr => !(expr.id && expr.id.startsWith('expr-')));
+            calculator.setState(state, {allowUndo: false});
+            enableResultActions();
+        }
 
         function toggleAlgorithmPanel() {
             document.getElementById('algorithm-panel').classList.toggle('open');
@@ -695,6 +741,10 @@
         // 1. 上传图片核心逻辑
         function uploadImage(file) {
             autoCutoutRequested = false;
+            pendingAutoResult = null;
+            cutoutWasAutomatic = false;
+            hasImage = false;
+            clearRenderedCurves();
             // 将上传的图片读取并缓存为 DataURL 用于右下角对比
             var reader = new FileReader();
             reader.onload = function(e) {
@@ -705,50 +755,39 @@
             reader.readAsDataURL(file);
 
             var statusEl = document.getElementById('upload-status');
-            statusEl.innerHTML = "正在上传并检测边缘...";
+            statusEl.innerHTML = "步骤 1/2：正在上传图片";
+            setWorkflow('正在上传图片…', 0, false, false);
             
             var formData = new FormData();
             formData.append('image', file);
 
-            fetch('/upload', {
-                method: 'POST',
-                body: formData
-            })
-            .then(res => {
-                if (!res.ok) throw new Error("上传失败");
-                return res.json();
-            })
-            .then(data => {
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', '/upload');
+            xhr.responseType = 'json';
+            xhr.upload.onprogress = function(event) {
+                if (event.lengthComputable) setWorkflow('正在上传图片…', event.loaded / event.total * 100, false, false);
+            };
+            xhr.onload = function() {
+                var data = xhr.response || {};
+                if (xhr.status < 200 || xhr.status >= 300) {
+                    handleUploadError(new Error(data.error || '上传失败'));
+                    return;
+                }
                 hasImage = true;
                 isImported = true;
-                statusEl.innerHTML = "图片已载入并自动绘制";
-                
-                // 动态根据图片分辨率设置 Desmos 视野范围
-                showProcessingInfo(data);
-                calculator.setMathBounds({
-                    left: -Math.round(data.width * 0.1),
-                    right: Math.round(data.width * 1.1),
-                    bottom: -Math.round(data.height * 0.1),
-                    top: Math.round(data.height * 1.1)
-                });
+                document.getElementById('img-resolution').innerText = `${data.width} x ${data.height}`;
+                statusEl.innerHTML = "步骤 2/2：图片上传完成，正在分析并生成公式";
+                setWorkflow('正在检测边缘并生成 Desmos 公式…', null, true, false);
+                requestNewCurves(true);
+            };
+            xhr.onerror = function() { handleUploadError(new Error('网络连接失败')); };
+            xhr.send(formData);
 
-                // 解禁按钮
-                document.getElementById('confirm-btn').disabled = false;
-                document.getElementById('draw-btn').disabled = false;
-                document.getElementById('download-png-btn').disabled = false;
-                document.getElementById('download-txt-btn').disabled = false;
-
-                // 首次渲染曲线
-                renderCurves(data.result);
-                if (data.processing && data.processing.truncated) {
-                    autoCutoutRequested = true;
-                    requestCutout(true);
-                }
-            })
-            .catch(err => {
+            function handleUploadError(err) {
                 statusEl.innerHTML = "<span style='color:#ff3b30;'>载入失败，请重试</span>";
+                setWorkflow('上传失败', 100, false, true);
                 console.error(err);
-            });
+            }
         }
 
         // 2. 实时滑块联动与 Debounce 发送
@@ -763,7 +802,7 @@
             }, 150);
         }
 
-        function requestNewCurves() {
+        function requestNewCurves(initialProcessing) {
             var params = {
                 canny_high: parseInt(document.getElementById('canny-high').value),
                 canny_low: parseInt(document.getElementById('canny-low').value),
@@ -776,6 +815,7 @@
             processController = new AbortController();
             var controller = processController;
             document.getElementById('complexity-status').innerText = '正在重新计算…';
+            if (!initialProcessing) setWorkflow('正在按新参数重新绘制…', null, true, false);
 
             fetch('/process', {
                 method: 'POST',
@@ -790,7 +830,18 @@
             .then(data => {
                 if (controller !== processController) return;
                 showProcessingInfo(data);
-                renderCurves(data.result);
+                if (data.processing && data.processing.truncated) {
+                    pendingAutoResult = data;
+                    clearRenderedCurves();
+                    document.getElementById('upload-status').innerText = '分析完成：超过 5000 条，等待智能抠图';
+                    setWorkflow('公式过多，正在提取主要主体…', null, true, false);
+                } else {
+                    pendingAutoResult = null;
+                    renderCurves(data.result);
+                    enableResultActions();
+                    document.getElementById('upload-status').innerText = initialProcessing ? '图片分析完成并已绘制' : '参数更新完成并已绘制';
+                    setWorkflow('绘制完成', 100, false, true);
+                }
                 if (data.processing && data.processing.truncated && !autoCutoutRequested) {
                     autoCutoutRequested = true;
                     requestCutout(true);
@@ -799,9 +850,18 @@
             .catch(err => {
                 if (err.name !== 'AbortError') {
                     document.getElementById('complexity-status').innerText = '处理失败';
+                    setWorkflow('边缘分析失败', 100, false, true);
                     console.error("Process error:", err);
                 }
             });
+        }
+
+        function enableResultActions() {
+            var enabled = currentLatexList.length > 0;
+            document.getElementById('confirm-btn').disabled = !enabled;
+            document.getElementById('draw-btn').disabled = !enabled;
+            document.getElementById('download-png-btn').disabled = !enabled;
+            document.getElementById('download-txt-btn').disabled = !enabled;
         }
 
         // 3. 渲染曲线逻辑
@@ -857,12 +917,14 @@
             var hint = document.getElementById('cutout-hint');
             var preview = document.getElementById('cutout-preview-img');
             var confirmButton = document.getElementById('confirm-cutout-btn');
+            cutoutWasAutomatic = automatic;
             modal.classList.add('active');
             preview.style.display = 'none';
             confirmButton.disabled = true;
             hint.innerText = automatic
                 ? '图片处理后仍超过 5000 条表达式，正在自动提取主要主体…'
                 : '正在识别主要人物或建筑…';
+            setWorkflow(automatic ? '正在提取主要主体…' : '正在生成抠图预览…', null, true, false);
 
             fetch('/cutout', { method: 'POST' })
             .then(async res => {
@@ -875,9 +937,11 @@
                 preview.style.display = 'block';
                 hint.innerText = `已提取主体（约占画面 ${data.coverage}%），请确认边缘是否正确`;
                 confirmButton.disabled = false;
+                setWorkflow('抠图完成，等待你的确认', 100, false, false);
             })
             .catch(err => {
                 hint.innerText = err.message || '抠图失败，请保留原图继续调节参数';
+                setWorkflow('抠图失败，可选择保留原图', 100, false, false);
             });
         }
 
@@ -885,10 +949,24 @@
             document.getElementById('cutout-modal').classList.remove('active');
         }
 
+        function keepOriginalAfterCutout() {
+            closeCutoutModal();
+            if (cutoutWasAutomatic && pendingAutoResult) {
+                showProcessingInfo(pendingAutoResult);
+                renderCurves(pendingAutoResult.result);
+                enableResultActions();
+                document.getElementById('upload-status').innerText = '已保留原图并绘制 5000 条公式';
+                setWorkflow('已按原图绘制', 100, false, true);
+                pendingAutoResult = null;
+            }
+            cutoutWasAutomatic = false;
+        }
+
         function confirmCutout() {
             var button = document.getElementById('confirm-cutout-btn');
             button.disabled = true;
             button.innerText = '正在重新绘制…';
+            setWorkflow('已确认抠图，正在重新生成公式…', null, true, false);
             fetch('/cutout/confirm', { method: 'POST' })
             .then(async res => {
                 var data = await res.json();
@@ -901,11 +979,16 @@
                 document.getElementById('modal-preview-img').src = previewUrl;
                 showProcessingInfo(data);
                 renderCurves(data.result);
+                enableResultActions();
+                pendingAutoResult = null;
+                cutoutWasAutomatic = false;
                 document.getElementById('upload-status').innerText = '已采用抠图并自动绘制';
+                setWorkflow('抠图结果绘制完成', 100, false, true);
                 closeCutoutModal();
             })
             .catch(err => {
                 document.getElementById('cutout-hint').innerText = err.message;
+                setWorkflow('抠图结果绘制失败', 100, false, false);
             })
             .finally(() => {
                 button.disabled = false;

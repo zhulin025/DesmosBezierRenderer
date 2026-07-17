@@ -227,7 +227,7 @@ def process_image_to_latex(image, turdsize, alphamax, opttolerance, canny_low, c
 @app.route('/upload', methods=['POST'])
 def upload():
     """
-    接收用户上传的图片文件并缓存在内存中。使用默认参数进行首次提取。
+    只接收并缓存图片。边缘检测由 /process 单独执行，让前端可以明确展示两个阶段。
     """
     global UPLOADED_IMAGE, ORIGINAL_IMAGE, CUTOUT_CANDIDATE
     file = request.files.get('image')
@@ -245,21 +245,10 @@ def upload():
         UPLOADED_IMAGE = image
         CUTOUT_CANDIDATE = None
         
-        # 使用默认参数计算贝塞尔曲线
-        latex_list, width, height, processing = process_image_to_latex(
-            image,
-            turdsize=DEFAULT_TURDSIZE,
-            alphamax=DEFAULT_ALPHAMAX,
-            opttolerance=DEFAULT_OPTTOLERANCE,
-            canny_low=DEFAULT_CANNY_LOW,
-            canny_high=DEFAULT_CANNY_HIGH
-        )
-
         return {
-            'result': latex_list,
-            'width': width,
-            'height': height,
-            'processing': processing
+            'uploaded': True,
+            'width': image.shape[1],
+            'height': image.shape[0]
         }
     except Exception as e:
         traceback.print_exc()
