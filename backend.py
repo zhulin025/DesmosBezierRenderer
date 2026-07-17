@@ -166,7 +166,7 @@ def trace_image(image, turdsize, alphamax, opttolerance, canny_low, canny_high,
                 x2, y2 = segment.end_point
                 # 折角处生成两条直线公式
                 latex.append({
-                    'id': f'expr-{exprid + 1}',
+                    'id': f'expr_{exprid + 1}',
                     'latex': f'((1-t)*{x0:.3f}+t*{x1:.3f},(1-t)*{y0:.3f}+t*{y1:.3f})',
                     'color': COLOUR
                 })
@@ -174,7 +174,7 @@ def trace_image(image, turdsize, alphamax, opttolerance, canny_low, canny_high,
                 if exprid >= max_expressions:
                     return latex, image.shape[1], image.shape[0], True
                 latex.append({
-                    'id': f'expr-{exprid + 1}',
+                    'id': f'expr_{exprid + 1}',
                     'latex': f'((1-t)*{x1:.3f}+t*{x2:.3f},(1-t)*{y1:.3f}+t*{y2:.3f})',
                     'color': COLOUR
                 })
@@ -189,7 +189,7 @@ def trace_image(image, turdsize, alphamax, opttolerance, canny_low, canny_high,
                     f'(1-t)*((1-t)*((1-t)*{y0:.3f}+t*{y1:.3f})+t*((1-t)*{y1:.3f}+t*{y2:.3f}))+t*((1-t)*((1-t)*{y1:.3f}+t*{y2:.3f})+t*((1-t)*{y2:.3f}+t*{y3:.3f})))'
                 )
                 latex.append({
-                    'id': f'expr-{exprid + 1}',
+                    'id': f'expr_{exprid + 1}',
                     'latex': formula,
                     'color': COLOUR
                 })

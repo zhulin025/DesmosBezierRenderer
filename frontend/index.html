@@ -692,10 +692,18 @@
         function clearRenderedCurves() {
             currentLatexList = [];
             document.getElementById('curves-count').innerText = '0';
-            var state = calculator.getState();
-            state.expressions.list = state.expressions.list.filter(expr => !(expr.id && expr.id.startsWith('expr-')));
-            calculator.setState(state, {allowUndo: false});
+            removeRenderedExpressions();
             enableResultActions();
+        }
+
+        function isRenderedExpression(expr) {
+            return !!(expr && expr.id && (expr.id.startsWith('expr_') || expr.id.startsWith('expr-')));
+        }
+
+        function removeRenderedExpressions() {
+            calculator.removeExpressions(calculator.getExpressions()
+                .filter(isRenderedExpression)
+                .map(expr => ({ id: expr.id })));
         }
 
         function toggleAlgorithmPanel() {
@@ -871,25 +879,19 @@
 
             // 如果当前不在逐步绘制过程中，就将曲线注入 Desmos
             if (!isStepDrawing) {
-                var state = calculator.getState();
-                
-                // 清理旧曲线
-                state.expressions.list = state.expressions.list.filter(expr => !expr.id.startsWith('expr-'));
-                
-                // 检测完成后自动导入 Desmos，无需用户再次确认。
-                for (var expr of result) {
-                    state.expressions.list.push({
+                removeRenderedExpressions();
+
+                // 使用 Desmos 官方批量接口导入，避免直接修改不透明的内部 state。
+                calculator.setExpressions(result.map(expr => ({
                         id: expr.id,
                         latex: expr.latex,
                         color: expr.color,
                         type: "expression",
                         secret: false,
                         hidden: false,
-                        lineWidth: selectedLineWidth
-                    });
-                }
-                
-                calculator.setState(state, {allowUndo: false});
+                        lineWidth: selectedLineWidth,
+                        parametricDomain: { min: '0', max: '1' }
+                })));
             }
         }
 
@@ -1042,13 +1044,9 @@
             if (stepTimer) clearTimeout(stepTimer);
 
             // 隐藏所有公式
-            var state = calculator.getState();
-            for (var expr of state.expressions.list) {
-                if (expr.id && expr.id.startsWith('expr-')) {
-                    expr.hidden = true;
-                }
-            }
-            calculator.setState(state, {allowUndo: false});
+            calculator.setExpressions(calculator.getExpressions()
+                .filter(isRenderedExpression)
+                .map(expr => ({ id: expr.id, hidden: true })));
 
             // 清理高亮
             var prevActive = document.querySelector('.dcg-active-drawing-item');
@@ -1071,13 +1069,9 @@
             if (stepTimer) clearTimeout(stepTimer);
 
             // 1. 将所有曲线公式设为 hidden: true (隐藏)
-            var state = calculator.getState();
-            for (var expr of state.expressions.list) {
-                if (expr.id && expr.id.startsWith('expr-')) {
-                    expr.hidden = true;
-                }
-            }
-            calculator.setState(state, {allowUndo: false});
+            calculator.setExpressions(calculator.getExpressions()
+                .filter(isRenderedExpression)
+                .map(expr => ({ id: expr.id, hidden: true })));
 
             // 2. 更新进度控制和 UI
             setUIState(true, false);
