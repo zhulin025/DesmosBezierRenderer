@@ -18,7 +18,7 @@ def get_resource_path(relative_path):
 
 app = Flask(__name__, template_folder=get_resource_path('frontend'))
 CORS(app)
-PORT = 5000
+PORT = int(os.environ.get('PORT', '5000'))
 
 # 缓存用户上传的原始图片（OpenCV BGR 矩阵）
 UPLOADED_IMAGE = None
