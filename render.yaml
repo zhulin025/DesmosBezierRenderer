@@ -1,8 +1,0 @@
-services:
-  - type: web
-    name: desmos-bezier-renderer
-    runtime: docker
-    plan: free
-    region: singapore
-    healthCheckPath: /calculator
-    autoDeployTrigger: commit

@@ -107,21 +107,18 @@ pyinstaller --noconfirm --onedir --windowed --name "DesmosBezierRenderer" --hidd
 
 ---
 
-## 🐳 Docker 与线上部署
+## 🌐 线上部署
 
-项目包含 `Dockerfile` 和 `render.yaml`，生产环境使用 Gunicorn 启动 Flask：
+当前项目部署在阿里云轻量应用服务器：
 
-```sh
-docker build -t desmos-bezier-renderer .
-docker run --rm -p 5000:5000 desmos-bezier-renderer
-```
+👉 **[https://47.254.246.41:5000/calculator](https://47.254.246.41:5000/calculator)**
 
-容器启动后访问 `http://127.0.0.1:5000/calculator`。Render Blueprint 可以直接读取仓库根目录的 `render.yaml` 创建 Web Service；每次推送默认分支后会自动重新部署。
+服务器沿用现有 Python/Flask 运行环境。更新时在服务器项目目录拉取 GitHub `master` 分支、安装依赖并重启现有服务进程；不要另建 Render、Docker 或其他托管项目。
 
 ### 运行限制
 
 - 单个上传文件最大 `20 MB`。
-- 当前服务把图片保存在进程内存中，适合单实例演示和个人使用；多用户生产环境应改为会话级缓存或对象存储，避免不同用户相互覆盖。
+- 当前服务把图片保存在进程内存中，适合当前单实例演示和个人使用；多用户生产环境应改为会话级缓存或对象存储，避免不同用户相互覆盖。
 - Desmos API 和遥测脚本由浏览器从外部服务加载，部署环境需要允许访问相应域名。
 
 ---
