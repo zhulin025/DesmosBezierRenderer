@@ -161,6 +161,23 @@
             border-bottom: 1px solid var(--border-sidebar);
             padding-bottom: 6px;
         }
+        .collapsible-header {
+            width: 100%; border: 0; background: none; cursor: pointer;
+            display: flex; align-items: center; justify-content: space-between;
+            color: var(--text-muted); padding: 0 0 8px; margin: 0 0 12px;
+            border-bottom: 1px solid var(--border-sidebar); font: inherit;
+        }
+        .collapsible-header strong { font-size: 13px; text-transform: uppercase; letter-spacing: .5px; }
+        .collapsible-arrow { transition: transform .2s ease; }
+        .collapsible.open .collapsible-arrow { transform: rotate(180deg); }
+        .collapsible-content { display: none; }
+        .collapsible.open .collapsible-content { display: block; }
+        .cutout-btn {
+            position: absolute; left: 8px; bottom: 8px; z-index: 2;
+            border: 0; border-radius: 7px; padding: 5px 9px; cursor: pointer;
+            color: white; background: rgba(0,113,227,.9); font-size: 11px; font-weight: 600;
+        }
+        .cutout-actions { display: flex; gap: 10px; width: 100%; margin-top: 14px; }
         .control-group {
             margin-bottom: 20px;
             display: flex;
@@ -471,8 +488,34 @@
             <span id="upload-status">拖拽图片或 <strong>点击上传</strong></span>
         </div>
 
-        <div class="section-title">算法参数调节</div>
-        
+        <div class="section-title">动态播放与演示</div>
+        <div class="draw-panel">
+            <button class="btn secondary" id="draw-btn" disabled onclick="startStepByStepDraw()">逐步绘制</button>
+            <button class="btn secondary danger" id="pause-btn" style="display: none;" onclick="togglePause()">暂停</button>
+            <button class="btn secondary" id="reset-btn" style="display: none;" onclick="resetDraw()">重置</button>
+            <div class="speed-container" style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #a1a1aa;">
+                <span>时间间隔:</span>
+                <input type="range" id="speed-range" min="1" max="150" value="10" oninput="document.getElementById('speed-val-lbl').innerText = this.value+'ms'" style="width: 120px;">
+                <span id="speed-val-lbl">10ms</span>
+            </div>
+            <div id="progress-wrapper" style="display: none;">
+                <div style="display: flex; justify-content: space-between; font-size: 11px; color: #86868b;">
+                    <span>绘制进度</span><span id="progress-text">0 / 0</span>
+                </div>
+                <div class="progress-bar-bg"><div class="progress-bar-fg" id="progress-bar"></div></div>
+            </div>
+        </div>
+
+        <div style="display: flex; gap: 10px; margin: 14px 0 20px;">
+            <button class="btn secondary" id="download-png-btn" disabled onclick="downloadPNG()" style="flex: 1; margin-bottom: 0;">下载 PNG 图片</button>
+            <button class="btn secondary" id="download-txt-btn" disabled onclick="downloadTXT()" style="flex: 1; margin-bottom: 0;">下载公式 TXT</button>
+        </div>
+
+        <div class="collapsible" id="algorithm-panel">
+        <button class="collapsible-header" onclick="toggleAlgorithmPanel()">
+            <strong>算法参数调节</strong><span class="collapsible-arrow">⌄</span>
+        </button>
+        <div class="collapsible-content">
         <div class="control-group">
             <div class="control-label-row">
                 <span class="control-name">Canny 边缘上限</span>
@@ -527,34 +570,14 @@
                 <span class="status-lbl">曲线段总数:</span>
                 <span class="status-val" id="curves-count">0</span>
             </div>
+            <div class="status-row">
+                <span class="status-lbl">复杂度保护:</span>
+                <span class="status-val" id="complexity-status">待检测</span>
+            </div>
         </div>
 
-        <button class="btn" id="confirm-btn" disabled onclick="confirmImport()">确定导入 Desmos</button>
-
-        <div style="display: flex; gap: 10px; margin-bottom: 12px;">
-            <button class="btn secondary" id="download-png-btn" disabled onclick="downloadPNG()" style="flex: 1; margin-bottom: 0;">下载 PNG 图片</button>
-            <button class="btn secondary" id="download-txt-btn" disabled onclick="downloadTXT()" style="flex: 1; margin-bottom: 0;">下载公式 TXT</button>
+        <button class="btn" id="confirm-btn" disabled onclick="confirmImport()">重新导入 Desmos</button>
         </div>
-
-        <div class="section-title">动态播放与演示</div>
-        <div class="draw-panel">
-            <button class="btn secondary" id="draw-btn" disabled onclick="startStepByStepDraw()">逐步绘制</button>
-            <button class="btn secondary danger" id="pause-btn" style="display: none;" onclick="togglePause()">暂停</button>
-            <button class="btn secondary" id="reset-btn" style="display: none;" onclick="resetDraw()">重置</button>
-            <div class="speed-container" style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #a1a1aa;">
-                <span>时间间隔:</span>
-                <input type="range" id="speed-range" min="1" max="150" value="10" oninput="document.getElementById('speed-val-lbl').innerText = this.value+'ms'" style="width: 120px;">
-                <span id="speed-val-lbl">10ms</span>
-            </div>
-            <div id="progress-wrapper" style="display: none;">
-                <div style="display: flex; justify-content: space-between; font-size: 11px; color: #86868b;">
-                    <span>绘制进度</span>
-                    <span id="progress-text">0 / 0</span>
-                </div>
-                <div class="progress-bar-bg">
-                    <div class="progress-bar-fg" id="progress-bar"></div>
-                </div>
-            </div>
         </div>
     </div>
     <button class="toggle-sidebar-btn" onclick="toggleSidebar()" title="收起/展开控制面板">
@@ -570,6 +593,19 @@
     <div class="floating-preview" id="floating-preview-card" onclick="openPreviewModal()">
         <span class="floating-preview-badge">原图对比</span>
         <img id="floating-preview-img" src="" alt="Original Preview">
+        <button class="cutout-btn" id="cutout-btn" onclick="event.stopPropagation(); requestCutout(false)">智能抠图</button>
+    </div>
+
+    <div class="preview-modal" id="cutout-modal">
+        <div class="modal-content-wrapper" onclick="event.stopPropagation()">
+            <button class="close-modal-btn" onclick="closeCutoutModal()">&times;</button>
+            <div id="cutout-hint" style="color:var(--text-main);margin-bottom:12px;font-size:14px;">正在识别主要人物或建筑…</div>
+            <img id="cutout-preview-img" src="" alt="抠图预览" style="display:none;background:repeating-conic-gradient(#ddd 0 25%,#fff 0 50%) 50%/16px 16px;">
+            <div class="cutout-actions">
+                <button class="btn secondary" onclick="closeCutoutModal()">保留原图</button>
+                <button class="btn" id="confirm-cutout-btn" disabled onclick="confirmCutout()">确认并重新绘制</button>
+            </div>
+        </div>
     </div>
 
     <!-- 原图放大模态弹窗 -->
@@ -602,6 +638,35 @@
         var stepTimer = null;
         var debounceTimer = null;
         var hasImage = false;
+        var processController = null;
+        var autoCutoutRequested = false;
+
+        function toggleAlgorithmPanel() {
+            document.getElementById('algorithm-panel').classList.toggle('open');
+        }
+
+        function showProcessingInfo(data) {
+            var info = data.processing || {};
+            var resolution = `${data.width} x ${data.height}`;
+            if (info.optimized && info.original_width) {
+                resolution = `${info.original_width} x ${info.original_height} → ${resolution}`;
+            }
+            document.getElementById('img-resolution').innerText = resolution;
+            var status = document.getElementById('complexity-status');
+            if (info.truncated) {
+                status.innerText = `已限制在 ${info.expression_limit} 段`;
+                status.style.color = '#ff9f0a';
+            } else if (info.complexity_reduced) {
+                status.innerText = '已自动降复杂度';
+                status.style.color = '#ff9f0a';
+            } else if (info.optimized) {
+                status.innerText = '已自动缩放';
+                status.style.color = '#30d158';
+            } else {
+                status.innerText = '无需处理';
+                status.style.color = '#30d158';
+            }
+        }
 
         // 拖拽上传支持
         var dropZone = document.getElementById('drop-zone');
@@ -629,6 +694,7 @@
 
         // 1. 上传图片核心逻辑
         function uploadImage(file) {
+            autoCutoutRequested = false;
             // 将上传的图片读取并缓存为 DataURL 用于右下角对比
             var reader = new FileReader();
             reader.onload = function(e) {
@@ -654,11 +720,11 @@
             })
             .then(data => {
                 hasImage = true;
-                isImported = false;
-                statusEl.innerHTML = "图片已载入，可调节参数";
+                isImported = true;
+                statusEl.innerHTML = "图片已载入并自动绘制";
                 
                 // 动态根据图片分辨率设置 Desmos 视野范围
-                document.getElementById('img-resolution').innerText = `${data.width} x ${data.height}`;
+                showProcessingInfo(data);
                 calculator.setMathBounds({
                     left: -Math.round(data.width * 0.1),
                     right: Math.round(data.width * 1.1),
@@ -674,6 +740,10 @@
 
                 // 首次渲染曲线
                 renderCurves(data.result);
+                if (data.processing && data.processing.truncated) {
+                    autoCutoutRequested = true;
+                    requestCutout(true);
+                }
             })
             .catch(err => {
                 statusEl.innerHTML = "<span style='color:#ff3b30;'>载入失败，请重试</span>";
@@ -702,16 +772,36 @@
                 opttolerance: parseFloat(document.getElementById('opttolerance').value)
             };
 
+            if (processController) processController.abort();
+            processController = new AbortController();
+            var controller = processController;
+            document.getElementById('complexity-status').innerText = '正在重新计算…';
+
             fetch('/process', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(params)
+                body: JSON.stringify(params),
+                signal: controller.signal
             })
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) throw new Error('处理失败');
+                return res.json();
+            })
             .then(data => {
+                if (controller !== processController) return;
+                showProcessingInfo(data);
                 renderCurves(data.result);
+                if (data.processing && data.processing.truncated && !autoCutoutRequested) {
+                    autoCutoutRequested = true;
+                    requestCutout(true);
+                }
             })
-            .catch(err => console.error("Process error:", err));
+            .catch(err => {
+                if (err.name !== 'AbortError') {
+                    document.getElementById('complexity-status').innerText = '处理失败';
+                    console.error("Process error:", err);
+                }
+            });
         }
 
         // 3. 渲染曲线逻辑
@@ -726,14 +816,14 @@
                 // 清理旧曲线
                 state.expressions.list = state.expressions.list.filter(expr => !expr.id.startsWith('expr-'));
                 
-                // 添加新曲线。在确定导入之前，为了整洁，我们在列表里将它们设为 secret: true
+                // 检测完成后自动导入 Desmos，无需用户再次确认。
                 for (var expr of result) {
                     state.expressions.list.push({
                         id: expr.id,
                         latex: expr.latex,
                         color: expr.color,
                         type: "expression",
-                        secret: !isImported,
+                        secret: false,
                         hidden: false
                     });
                 }
@@ -742,7 +832,7 @@
             }
         }
 
-        // 4. 确定导入逻辑 (将 secret 改为 false，显示在左侧计算器列表中)
+        // 手动重新导入入口保留在高级参数折叠区内。
         function confirmImport() {
             if (!hasImage || currentLatexList.length === 0) return;
             isImported = true;
@@ -756,9 +846,71 @@
             }
             calculator.setState(state, {allowUndo: false});
             
-            // 锁定确定导入按钮
-            document.getElementById('confirm-btn').innerText = "已导入公式列表";
-            document.getElementById('confirm-btn').disabled = true;
+            var button = document.getElementById('confirm-btn');
+            button.innerText = "已重新导入";
+            setTimeout(() => button.innerText = "重新导入 Desmos", 1200);
+        }
+
+        function requestCutout(automatic) {
+            if (!hasImage) return;
+            var modal = document.getElementById('cutout-modal');
+            var hint = document.getElementById('cutout-hint');
+            var preview = document.getElementById('cutout-preview-img');
+            var confirmButton = document.getElementById('confirm-cutout-btn');
+            modal.classList.add('active');
+            preview.style.display = 'none';
+            confirmButton.disabled = true;
+            hint.innerText = automatic
+                ? '图片处理后仍超过 5000 条表达式，正在自动提取主要主体…'
+                : '正在识别主要人物或建筑…';
+
+            fetch('/cutout', { method: 'POST' })
+            .then(async res => {
+                var data = await res.json();
+                if (!res.ok) throw new Error(data.error || '抠图失败');
+                return data;
+            })
+            .then(data => {
+                preview.src = data.preview;
+                preview.style.display = 'block';
+                hint.innerText = `已提取主体（约占画面 ${data.coverage}%），请确认边缘是否正确`;
+                confirmButton.disabled = false;
+            })
+            .catch(err => {
+                hint.innerText = err.message || '抠图失败，请保留原图继续调节参数';
+            });
+        }
+
+        function closeCutoutModal() {
+            document.getElementById('cutout-modal').classList.remove('active');
+        }
+
+        function confirmCutout() {
+            var button = document.getElementById('confirm-cutout-btn');
+            button.disabled = true;
+            button.innerText = '正在重新绘制…';
+            fetch('/cutout/confirm', { method: 'POST' })
+            .then(async res => {
+                var data = await res.json();
+                if (!res.ok) throw new Error(data.error || '确认失败');
+                return data;
+            })
+            .then(data => {
+                var previewUrl = document.getElementById('cutout-preview-img').src;
+                document.getElementById('floating-preview-img').src = previewUrl;
+                document.getElementById('modal-preview-img').src = previewUrl;
+                showProcessingInfo(data);
+                renderCurves(data.result);
+                document.getElementById('upload-status').innerText = '已采用抠图并自动绘制';
+                closeCutoutModal();
+            })
+            .catch(err => {
+                document.getElementById('cutout-hint').innerText = err.message;
+            })
+            .finally(() => {
+                button.disabled = false;
+                button.innerText = '确认并重新绘制';
+            });
         }
 
         // 5. 逐步绘制逻辑
